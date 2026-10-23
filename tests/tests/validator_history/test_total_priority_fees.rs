@@ -3,7 +3,7 @@ use anchor_lang::{solana_program::instruction::Instruction, InstructionData, ToA
 use solana_program_test::*;
 use solana_sdk::{clock::Clock, signature::Keypair, signer::Signer, transaction::Transaction};
 use tests::validator_history_fixtures::{system_account, TestFixture};
-use validator_history::ValidatorHistory;
+use validator_history::{ValidatorHistory, ValidatorHistoryEntry};
 
 #[tokio::test]
 async fn test_priority_fee_history_basic_update() {
@@ -114,6 +114,59 @@ async fn test_priority_fee_history_basic_update() {
     assert_eq!(
         account.history.arr[1].block_data_updated_at_slot,
         current_slot
+    );
+}
+
+#[tokio::test]
+async fn test_priority_fee_history_leader_slots_only() {
+    // The leader slots keeper operation writes only the scheduled count, passing the block
+    // metadata fields through as unset
+    let fixture = TestFixture::new().await;
+    let ctx = &fixture.ctx;
+    fixture.initialize_config().await;
+    fixture.initialize_validator_history_account().await;
+
+    let default_entry = ValidatorHistoryEntry::default();
+    let total_leader_slots: u32 = 1234;
+    let instruction = Instruction {
+        program_id: validator_history::id(),
+        data: validator_history::instruction::UpdatePriorityFeeHistory {
+            epoch: 0,
+            total_priority_fees: default_entry.total_priority_fees,
+            total_leader_slots,
+            blocks_produced: default_entry.blocks_produced,
+            highest_oracle_recorded_slot: default_entry.block_data_updated_at_slot,
+        }
+        .data(),
+        accounts: validator_history::accounts::UpdatePriorityFeeHistory {
+            validator_history_account: fixture.validator_history_account,
+            vote_account: fixture.vote_account,
+            config: fixture.validator_history_config,
+            priority_fee_oracle_authority: fixture.priority_fee_oracle_keypair.pubkey(),
+        }
+        .to_account_metas(None),
+    };
+    let transaction = Transaction::new_signed_with_payer(
+        &[instruction],
+        Some(&fixture.priority_fee_oracle_keypair.pubkey()),
+        &[&fixture.priority_fee_oracle_keypair],
+        ctx.borrow().last_blockhash,
+    );
+    fixture.submit_transaction_assert_success(transaction).await;
+
+    let account: ValidatorHistory = fixture
+        .load_and_deserialize(&fixture.validator_history_account)
+        .await;
+    assert_eq!(account.history.arr[0].epoch, 0);
+    assert_eq!(
+        account.history.total_leader_slots_range(0, 0),
+        vec![Some(total_leader_slots)]
+    );
+    assert_eq!(account.history.total_priority_fees_range(0, 0), vec![None]);
+    assert_eq!(account.history.blocks_produced_range(0, 0), vec![None]);
+    assert_eq!(
+        account.history.block_data_updated_at_slot_range(0, 0),
+        vec![None]
     );
 }
 
