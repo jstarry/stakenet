@@ -272,6 +272,11 @@ pub struct Args {
     #[arg(long, env, default_value = "false")]
     pub run_copy_is_bam_connected: bool,
 
+    /// Run Update Leader Slots Operation
+    /// NOTE: This is a permissioned operation and requires the oracle_authority_keypair
+    #[arg(long, env, default_value = "false")]
+    pub run_update_leader_slots: bool,
+
     /// Number of epochs to look back for block metadata
     #[arg(long, env, default_value = "3")]
     pub lookback_epochs: u64,
@@ -403,6 +408,7 @@ impl fmt::Display for Args {
             Validator History Min Stake: {:?} lamports\n\
             Run Directed Staking Operation: {:?}\n\
             Run Copy Is BAM Connected Operation: {:?}\n\
+            Run Update Leader Slots Operation: {:?}\n\
             Kobe API Base URL: {:?}\n\
             Coinbase Vote Pubkey: {:?}\n\
             JitoSOL Prime Vote Pubkey: {:?}\n\
@@ -453,6 +459,7 @@ impl fmt::Display for Args {
             self.validator_history_min_stake,
             self.run_directed_staking,
             self.run_copy_is_bam_connected,
+            self.run_update_leader_slots,
             self.kobe_api_base_url,
             self.coinbase_vote_pubkey,
             self.jitosol_prime_vote_pubkey,
