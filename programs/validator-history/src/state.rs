@@ -212,7 +212,16 @@ pub struct ValidatorHistoryEntry {
     /// 1 = connected, 0 = not connected, u8::MAX = unset/unknown.
     pub is_bam_connected: u8,
 
-    pub padding1: [u8; 6],
+    /// Prerelease kind of `version`: 0 = stable, 1 = release candidate, 2 = beta, 3 = alpha,
+    /// u8::MAX = unset/unknown. `version.patch` is 0 for a prerelease.
+    pub version_prerelease: u8,
+
+    pub padding1: [u8; 1],
+
+    /// The rc/beta/alpha number of `version`, 0 for a stable release, u16::MAX = unset/unknown.
+    pub version_prerelease_number: u16,
+
+    pub padding3: [u8; 2],
 
     /// `reward_lamports` without the `MAX_EPOCH_CREDITS` cap.
     /// Vote credits in tower epochs, vote reward lamports in alpenglow epochs.
@@ -256,7 +265,10 @@ impl Default for ValidatorHistoryEntry {
             block_data_updated_at_slot: u64::MAX,
             priority_fee_merkle_root_upload_authority: MerkleRootUploadAuthority::Unset,
             is_bam_connected: u8::MAX,
-            padding1: [u8::MAX; 6],
+            version_prerelease: u8::MAX,
+            padding1: [u8::MAX; 1],
+            version_prerelease_number: u16::MAX,
+            padding3: [u8::MAX; 2],
             reward_lamports: u64::MAX,
             epoch_stake_lamports: u64::MAX,
             padding2: [u8::MAX; 24],
@@ -1190,8 +1202,10 @@ impl ValidatorHistory {
                     entry.ip = ip;
                     entry.client_type = contact_info.version.client as u8;
                     entry.version.major = contact_info.version.major as u8;
-                    entry.version.minor = contact_info.version.minor as u8;
-                    entry.version.patch = contact_info.version.patch;
+                    entry.version.minor = contact_info.version.minor() as u8;
+                    entry.version.patch = contact_info.version.patch();
+                    entry.version_prerelease = contact_info.version.prerelease();
+                    entry.version_prerelease_number = contact_info.version.prerelease_number();
                     return Ok(());
                 }
                 Ordering::Greater => {
@@ -1204,8 +1218,10 @@ impl ValidatorHistory {
                         entry.ip = ip;
                         entry.client_type = contact_info.version.client as u8;
                         entry.version.major = contact_info.version.major as u8;
-                        entry.version.minor = contact_info.version.minor as u8;
-                        entry.version.patch = contact_info.version.patch;
+                        entry.version.minor = contact_info.version.minor() as u8;
+                        entry.version.patch = contact_info.version.patch();
+                        entry.version_prerelease = contact_info.version.prerelease();
+                        entry.version_prerelease_number = contact_info.version.prerelease_number();
                     }
                     return Ok(());
                 }
@@ -1218,9 +1234,11 @@ impl ValidatorHistory {
             client_type: contact_info.version.client as u8,
             version: ClientVersion {
                 major: contact_info.version.major as u8,
-                minor: contact_info.version.minor as u8,
-                patch: contact_info.version.patch,
+                minor: contact_info.version.minor() as u8,
+                patch: contact_info.version.patch(),
             },
+            version_prerelease: contact_info.version.prerelease(),
+            version_prerelease_number: contact_info.version.prerelease_number(),
             ..ValidatorHistoryEntry::default()
         };
         self.history.push(entry);

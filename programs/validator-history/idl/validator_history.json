@@ -1363,11 +1363,35 @@
             "type": "u8"
           },
           {
+            "name": "version_prerelease",
+            "docs": [
+              "Prerelease kind of `version`: 0 = stable, 1 = release candidate, 2 = beta, 3 = alpha,",
+              "u8::MAX = unset/unknown. `version.patch` is 0 for a prerelease."
+            ],
+            "type": "u8"
+          },
+          {
             "name": "padding1",
             "type": {
               "array": [
                 "u8",
-                6
+                1
+              ]
+            }
+          },
+          {
+            "name": "version_prerelease_number",
+            "docs": [
+              "The rc/beta/alpha number of `version`, 0 for a stable release, u16::MAX = unset/unknown."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "padding3",
+            "type": {
+              "array": [
+                "u8",
+                2
               ]
             }
           },

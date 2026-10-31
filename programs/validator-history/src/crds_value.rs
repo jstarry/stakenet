@@ -60,9 +60,40 @@ pub struct Version {
     pub client: u16,
 }
 
+/// Agave v4 packs the prerelease kind into the top bits of `minor`, and for a prerelease
+/// puts the prerelease number in `patch`. See agave version/src/v4.rs `PackedMinor`.
+const PRERELEASE_BITS_OFFSET: u16 = 14;
+const MINOR_MASK: u16 = (1 << PRERELEASE_BITS_OFFSET) - 1;
+
 impl Version {
     pub fn as_semver_version(&self) -> semver::Version {
-        semver::Version::new(self.major as u64, self.minor as u64, self.patch as u64)
+        semver::Version::new(self.major as u64, self.minor() as u64, self.patch() as u64)
+    }
+
+    pub fn minor(&self) -> u16 {
+        self.minor & MINOR_MASK
+    }
+
+    pub fn patch(&self) -> u16 {
+        if self.prerelease() == 0 {
+            self.patch
+        } else {
+            0
+        }
+    }
+
+    /// 0 = stable, 1 = release candidate, 2 = beta, 3 = alpha
+    pub fn prerelease(&self) -> u8 {
+        (self.minor >> PRERELEASE_BITS_OFFSET) as u8
+    }
+
+    /// The rc/beta/alpha number, 0 for a stable release
+    pub fn prerelease_number(&self) -> u16 {
+        if self.prerelease() == 0 {
+            0
+        } else {
+            self.patch
+        }
     }
 
     #[allow(dead_code)]
@@ -306,6 +337,43 @@ impl From<LegacyVersion1> for LegacyVersion2 {
             patch: legacy_version.patch,
             commit: legacy_version.commit,
             feature_set: 0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn version(minor: u16, patch: u16) -> Version {
+        Version {
+            major: 4,
+            minor,
+            patch,
+            ..Version::default()
+        }
+    }
+
+    #[test]
+    fn test_version_stable() {
+        let version = version(4, 1);
+        assert_eq!(version.minor(), 4);
+        assert_eq!(version.patch(), 1);
+        assert_eq!(version.prerelease(), 0);
+        assert_eq!(version.prerelease_number(), 0);
+        assert_eq!(version.as_semver_version(), semver::Version::new(4, 4, 1));
+    }
+
+    #[test]
+    fn test_version_prerelease() {
+        // (packed prerelease tag, rc/beta/alpha number)
+        for (tag, number) in [(1, 1), (2, 3), (3, 2)] {
+            let version = version(5 | tag << PRERELEASE_BITS_OFFSET, number);
+            assert_eq!(version.minor(), 5);
+            assert_eq!(version.patch(), 0);
+            assert_eq!(version.prerelease(), tag as u8);
+            assert_eq!(version.prerelease_number(), number);
+            assert_eq!(version.as_semver_version(), semver::Version::new(4, 5, 0));
         }
     }
 }

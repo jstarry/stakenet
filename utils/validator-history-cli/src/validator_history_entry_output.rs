@@ -99,8 +99,16 @@ impl From<ValidatorHistoryEntry> for ValidatorHistoryEntryOutput {
                 && value.version.minor.eq(&default_entry.version.minor)
                 && value.version.patch.eq(&default_entry.version.patch)))
             .then_some(format!(
-                "{}.{}.{}",
-                value.version.major, value.version.minor, value.version.patch
+                "{}.{}.{}{}",
+                value.version.major,
+                value.version.minor,
+                value.version.patch,
+                match value.version_prerelease {
+                    1 => format!("-rc.{}", value.version_prerelease_number),
+                    2 => format!("-beta.{}", value.version_prerelease_number),
+                    3 => format!("-alpha.{}", value.version_prerelease_number),
+                    _ => String::new(),
+                }
             )),
 
             ip: (!value.ip.eq(&default_entry.ip)).then_some(format!(

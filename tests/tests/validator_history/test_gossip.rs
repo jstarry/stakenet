@@ -23,13 +23,17 @@ use tests::validator_history_fixtures::TestFixture;
 use validator_history::{Ed25519SignatureOffsets, ValidatorHistory};
 
 fn create_gossip_tx(fixture: &TestFixture, crds_data: &CrdsData) -> Transaction {
+    create_gossip_tx_from_data(fixture, &serialize(crds_data).unwrap())
+}
+
+fn create_gossip_tx_from_data(fixture: &TestFixture, data: &[u8]) -> Transaction {
     let ctx = &fixture.ctx;
     let dalek_keypair =
         ed25519_dalek::Keypair::from_bytes(&fixture.identity_keypair.to_bytes()).unwrap();
 
     // create ed25519 instruction
     #[allow(deprecated)]
-    let ed25519_ix = new_ed25519_instruction(&dalek_keypair, &serialize(crds_data).unwrap());
+    let ed25519_ix = new_ed25519_instruction(&dalek_keypair, data);
 
     // create CopyGossipContactInfo instruction
     let instruction = Instruction {
@@ -78,8 +82,87 @@ async fn test_copy_contact_info() {
     assert!(account.history.arr[0].version.major == version.major as u8);
     assert!(account.history.arr[0].version.minor == version.minor as u8);
     assert!(account.history.arr[0].version.patch == version.patch);
+    assert!(account.history.arr[0].version_prerelease == 0);
+    assert!(account.history.arr[0].version_prerelease_number == 0);
     assert!(account.history.arr[0].ip == ipv4.octets());
     assert!(account.history.arr[0].epoch == 0);
+}
+
+fn encode_varint(mut value: u16, bytes: &mut Vec<u8>) {
+    while value >= 0x80 {
+        bytes.push(value as u8 | 0x80);
+        value >>= 7;
+    }
+    bytes.push(value as u8);
+}
+
+fn varint_len(bytes: &[u8]) -> usize {
+    bytes.iter().position(|byte| byte & 0x80 == 0).unwrap() + 1
+}
+
+/// Serializes `contact_info` with its version's major, minor and patch replaced, the way agave v4
+/// packs a prerelease into the minor.
+fn serialize_with_version(
+    contact_info: ContactInfo,
+    major: u16,
+    minor: u16,
+    patch: u16,
+) -> Vec<u8> {
+    let bytes = serialize(&CrdsData::ContactInfo(contact_info)).unwrap();
+    // enum tag, pubkey, wallclock (varint), outset, shred_version
+    let start = 4 + 32 + varint_len(&bytes[36..]) + 8 + 2;
+    let mut end = start;
+    for _ in 0..3 {
+        end += varint_len(&bytes[end..]);
+    }
+    let mut packed = bytes[..start].to_vec();
+    encode_varint(major, &mut packed);
+    encode_varint(minor, &mut packed);
+    encode_varint(patch, &mut packed);
+    packed.extend_from_slice(&bytes[end..]);
+    packed
+}
+
+#[tokio::test]
+async fn test_copy_contact_info_prerelease_version() {
+    let fixture = TestFixture::new().await;
+    fixture.initialize_config().await;
+    fixture.initialize_validator_history_account().await;
+
+    let mut contact_info = ContactInfo::new(fixture.identity_keypair.pubkey(), 0, 0);
+    contact_info
+        .set_socket(
+            0,
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), 1234),
+        )
+        .expect("could not set socket");
+
+    // (packed minor, patch) on the wire -> (minor, patch, prerelease, prerelease number) recorded
+    for ((minor, patch), expected) in [
+        ((4 | 1 << 14, 1), (4, 0, 1, 1)), // 4.4.0-rc.1
+        ((5 | 3 << 14, 2), (5, 0, 3, 2)), // 4.5.0-alpha.2
+        ((5 | 2 << 14, 3), (5, 0, 2, 3)), // 4.5.0-beta.3
+        ((4, 1), (4, 1, 0, 0)),           // 4.4.1
+    ] {
+        let data = serialize_with_version(contact_info.clone(), 4, minor, patch);
+        let transaction = create_gossip_tx_from_data(&fixture, &data);
+        fixture.submit_transaction_assert_success(transaction).await;
+
+        let account: ValidatorHistory = fixture
+            .load_and_deserialize(&fixture.validator_history_account)
+            .await;
+        let entry = account.history.arr[0];
+        assert_eq!(entry.version.major, 4);
+        assert_eq!(
+            (
+                entry.version.minor,
+                entry.version.patch,
+                entry.version_prerelease,
+                entry.version_prerelease_number
+            ),
+            expected
+        );
+    }
 }
 
 #[tokio::test]
